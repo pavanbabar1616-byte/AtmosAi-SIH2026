@@ -10,6 +10,9 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
+  <!-- Toast Container -->
+  <div id="toast-container" style="position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:10px;"></div>
+
   <!-- Login Screen -->
   <div id="login-screen" class="login-screen">
     <div class="login-card">
@@ -86,13 +89,20 @@
           <span class="live-pill"><span class="pulse"></span> LIVE</span>
         </div>
         <div class="topbar-right">
-          <div class="clock" id="clock"></div>
-          <button class="btn-secondary" id="simulate-btn">Simulate Live Stream</button>
+          <span id="connection-status" style="font-size:12px;font-weight:600;color:#22c55e;">🟢 Connected</span>
+          <span id="live-clock" style="font-size:13px;color:var(--muted);"></span>
+          <button class="btn-secondary" id="simulate-btn">▶ Simulate Live Stream</button>
         </div>
       </header>
 
       <!-- DASHBOARD VIEW -->
       <section id="view-dashboard" class="view active">
+        <div class="panel-header">
+          <h3>📊 Operational Dashboard</h3>
+          <button class="btn-secondary" onclick="fetchAllData(); showToast('🔄 Dashboard refreshed!', 'success');" style="padding:6px 14px;font-size:12px;">
+            🔄 Refresh
+          </button>
+        </div>
         <div class="kpi-grid">
           <div class="kpi-card">
             <div class="kpi-label">Total AWS Stations</div>
@@ -173,7 +183,15 @@
         <div class="panel">
           <div class="panel-header">
             <h3>AWS Station Inventory</h3>
-            <input type="search" id="station-search" placeholder="Search station ID or name…" class="search-input" />
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input type="search" id="station-search" placeholder="Search station ID or name…" class="search-input" />
+              <select id="status-filter">
+                <option value="all">All Status</option>
+                <option value="healthy">Healthy</option>
+                <option value="warning">Warning</option>
+                <option value="critical">Critical</option>
+              </select>
+            </div>
           </div>
           <div class="table-wrap">
             <table class="data-table" id="stations-table">
@@ -200,12 +218,13 @@
       <section id="view-anomalies" class="view">
         <div class="panel">
           <div class="panel-header">
-            <h3>Anomaly History</h3>
-            <div class="filter-group">
+            <h3>🚨 Anomaly History</h3>
+            <div style="display:flex;gap:8px;">
+              <button class="btn-secondary" onclick="exportReport()">📥 Export CSV</button>
               <select id="anomaly-filter">
                 <option value="all">All types</option>
                 <option value="Spike">Spike</option>
-                <option value="Frozen">Frozen / Stuck</option>
+                <option value="Frozen">Frozen</option>
                 <option value="Drift">Drift</option>
                 <option value="Communication">Communication</option>
                 <option value="Calibration">Calibration</option>
@@ -287,7 +306,7 @@
         </div>
       </section>
 
-      <!-- INVESTIGATE VIEW (Core differentiator) -->
+      <!-- INVESTIGATE VIEW -->
       <section id="view-investigate" class="view">
         <div class="investigate-layout">
           <div class="panel">

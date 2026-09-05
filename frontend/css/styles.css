@@ -351,3 +351,80 @@ select { min-width: 160px; }
   .main { margin-left: 64px; }
   .nav-item { justify-content: center; }
 }
+/* ===== ADD THIS AT THE END OF styles.css ===== */
+
+/* Toast Animation */
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+/* Notification Dot Pulse */
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+}
+
+.pulse-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    animation: pulse-dot 1.5s infinite;
+    margin-right: 6px;
+}
+
+/* Scrollable Table Container */
+.table-wrap {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.table-wrap::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.table-wrap::-webkit-scrollbar-track {
+    background: #1f2937;
+}
+
+.table-wrap::-webkit-scrollbar-thumb {
+    background: #4b5563;
+    border-radius: 9999px;
+}
+
+.table-wrap::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
+}
+
+/* Export Button Hover */
+.btn-secondary:hover {
+    background: #374151;
+    border-color: #38bdf8;
+    color: #fff;
+}
+
+/* Toast Container */
+#toast-container {
+    pointer-events: none;
+}
+
+#toast-container > div {
+    pointer-events: auto;
+}
+
+/* Responsive Improvements */
+@media (max-width: 768px) {
+    .topbar-right {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .topbar-right .clock {
+        font-size: 11px;
+    }
+    .search-input {
+        width: 140px;
+    }
+}

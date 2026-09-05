@@ -4,7 +4,10 @@
 (function () {
   "use strict";
 
-  // ---------- Auth ----------
+  // ============================================================
+  // LOGIN / LOGOUT
+  // ============================================================
+
   const loginScreen = document.getElementById("login-screen");
   const app = document.getElementById("app");
   const loginForm = document.getElementById("login-form");
@@ -21,14 +24,94 @@
     loginScreen.classList.remove("hidden");
   });
 
-  // ---------- Clock ----------
+  // ============================================================
+  // CLOCK & CONNECTION STATUS
+  // ============================================================
+
   function updateClock() {
     const now = new Date();
-    document.getElementById("clock").textContent =
-      now.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }) + " IST";
+    const clockEl = document.getElementById('live-clock');
+    if (clockEl) {
+      clockEl.textContent = now.toLocaleString('en-IN', { 
+        timeZone: 'Asia/Kolkata', 
+        hour12: false,
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    }
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  function updateConnectionStatus() {
+    const status = document.getElementById('connection-status');
+    if (status) {
+      status.textContent = '🟢 Connected';
+      status.style.color = '#22c55e';
+    }
+  }
+  updateConnectionStatus();
+
+  // ============================================================
+  // TOAST NOTIFICATIONS
+  // ============================================================
+
+  function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    
+    const colors = {
+      info: '#38bdf8',
+      success: '#22c55e',
+      warning: '#f59e0b',
+      error: '#ef4444'
+    };
+    
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+      background: #1f2937;
+      border: 1px solid ${colors[type] || colors.info};
+      border-left: 4px solid ${colors[type] || colors.info};
+      padding: 12px 20px;
+      border-radius: 8px;
+      color: #e2e8f0;
+      font-size: 14px;
+      min-width: 280px;
+      max-width: 400px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      animation: slideIn 0.3s ease;
+    `;
+    toast.textContent = message;
+    container.appendChild(toast);
+    
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transition = 'opacity 0.3s';
+      setTimeout(() => toast.remove(), 300);
+    }, 3500);
   }
 
-  // ---------- Navigation ----------
+  // ============================================================
+  // ALERT SOUND
+  // ============================================================
+
+  function playAlertSound() {
+    try {
+      const audio = new Audio('data:audio/wav;base64,UklGRnoAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoAAACBhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqFhYqF');
+      audio.play();
+    } catch(e) {
+      console.log('Audio not supported');
+    }
+  }
+
+  // ============================================================
+  // NAVIGATION
+  // ============================================================
+
   const views = document.querySelectorAll(".view");
   const navItems = document.querySelectorAll(".nav-item");
   const titleMap = {
@@ -47,7 +130,8 @@
     const view = document.getElementById("view-" + name);
     if (view) view.classList.add("active");
     document.querySelector(`.nav-item[data-view="${name}"]`)?.classList.add("active");
-    document.getElementById("view-title").textContent = titleMap[name] || name;
+    const titleEl = document.getElementById("view-title");
+    if (titleEl) titleEl.textContent = titleMap[name] || name;
     if (name === "investigate") renderCase(document.getElementById("case-select").value);
     if (name === "analytics") renderCharts();
     if (name === "health") renderHealthChart();
@@ -62,7 +146,31 @@
     }
   });
 
-  // ---------- KPIs ----------
+  // ============================================================
+  // EXPORT REPORT (CSV)
+  // ============================================================
+
+  window.exportReport = function() {
+    const anomalies = ANOMALIES || [];
+    let csv = 'Time,Station,Parameter,Value,Type,Severity,Confidence,Assessment\n';
+    anomalies.forEach(a => {
+      csv += `${a.time},${a.station},${a.param},${a.value},${a.type},${a.severity},${a.conf},${a.assessment}\n`;
+    });
+    
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `AtmosAi_Report_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('📥 Report exported successfully!', 'success');
+  };
+
+  // ============================================================
+  // KPIs
+  // ============================================================
+
   function computeKPIs() {
     const states = Object.values(STATION_STATE);
     const total = states.length;
@@ -70,15 +178,24 @@
     const warning = states.filter((s) => s.status === "warning").length;
     const critical = states.filter((s) => s.status === "critical").length;
     const avgHealth = Math.round(states.reduce((a, s) => a + s.health, 0) / total);
-    document.getElementById("kpi-total").textContent = total;
-    document.getElementById("kpi-healthy").textContent = healthy;
-    document.getElementById("kpi-warning").textContent = warning;
-    document.getElementById("kpi-critical").textContent = critical;
-    document.getElementById("kpi-anomalies").textContent = ANOMALIES.length;
-    document.getElementById("kpi-health").textContent = avgHealth + "%";
+    const kpiTotal = document.getElementById("kpi-total");
+    const kpiHealthy = document.getElementById("kpi-healthy");
+    const kpiWarning = document.getElementById("kpi-warning");
+    const kpiCritical = document.getElementById("kpi-critical");
+    const kpiAnomalies = document.getElementById("kpi-anomalies");
+    const kpiHealth = document.getElementById("kpi-health");
+    if (kpiTotal) kpiTotal.textContent = total;
+    if (kpiHealthy) kpiHealthy.textContent = healthy;
+    if (kpiWarning) kpiWarning.textContent = warning;
+    if (kpiCritical) kpiCritical.textContent = critical;
+    if (kpiAnomalies) kpiAnomalies.textContent = ANOMALIES.length;
+    if (kpiHealth) kpiHealth.textContent = avgHealth + "%";
   }
 
-  // ---------- Map ----------
+  // ============================================================
+  // MAP
+  // ============================================================
+
   let map;
   function initMap() {
     if (map) return;
@@ -111,16 +228,26 @@
     });
   }
 
-  // ---------- Station Table ----------
-  function renderStations(filter = "") {
-    const tbody = document.querySelector("#stations-table tbody");
-    const q = filter.toLowerCase();
-    tbody.innerHTML = "";
-    STATIONS.filter(
-      (s) => !q || s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)
-    ).forEach((st) => {
-      const state = STATION_STATE[st.id];
-      const tr = document.createElement("tr");
+  // ============================================================
+  // STATIONS TABLE (with Search & Filter)
+  // ============================================================
+
+  function renderStations(search = '', statusFilter = 'all') {
+    const tbody = document.querySelector('#stations-table tbody');
+    if (!tbody) return;
+    const q = search.toLowerCase();
+    tbody.innerHTML = '';
+    
+    const filtered = STATIONS.filter(s => {
+      const state = STATION_STATE[s.id];
+      const matchesSearch = !q || s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q);
+      const matchesStatus = statusFilter === 'all' || (state && state.status === statusFilter);
+      return matchesSearch && matchesStatus;
+    });
+    
+    filtered.forEach((st) => {
+      const state = STATION_STATE[st.id] || { status: 'unknown', health: 0 };
+      const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><strong>${st.id}</strong></td>
         <td>${st.name}<br/><span style="color:var(--muted);font-size:11px">${st.region}</span></td>
@@ -128,26 +255,38 @@
         <td>${state.temp != null ? state.temp + "°C" : "—"}</td>
         <td>${state.pressure != null ? state.pressure : "—"}</td>
         <td>${state.humidity != null ? state.humidity + "%" : "—"}</td>
-        <td>${state.health}%</td>
-        <td><span class="status-pill ${state.status}">${state.status}</span></td>
+        <td>${state.health || 0}%</td>
+        <td><span class="status-pill ${state.status || 'unknown'}">${state.status || 'unknown'}</span></td>
         <td><button class="btn-secondary" data-station="${st.id}">Inspect</button></td>
       `;
       tbody.appendChild(tr);
     });
+    
     tbody.querySelectorAll("[data-station]").forEach((btn) => {
       btn.addEventListener("click", () => openStationModal(btn.dataset.station));
     });
   }
 
   document.getElementById("station-search")?.addEventListener("input", (e) => {
-    renderStations(e.target.value);
+    const filter = document.getElementById("status-filter");
+    renderStations(e.target.value, filter ? filter.value : 'all');
   });
 
-  // ---------- Anomalies ----------
+  document.getElementById("status-filter")?.addEventListener("change", (e) => {
+    const search = document.getElementById("station-search");
+    renderStations(search ? search.value : '', e.target.value);
+  });
+
+  // ============================================================
+  // ANOMALIES
+  // ============================================================
+
   function renderAnomalies(filter = "all") {
     const tbody = document.querySelector("#anomalies-table tbody");
+    if (!tbody) return;
     tbody.innerHTML = "";
-    ANOMALIES.filter((a) => filter === "all" || a.type === filter).forEach((a) => {
+    const data = ANOMALIES || [];
+    data.filter((a) => filter === "all" || a.type === filter).forEach((a) => {
       const tr = document.createElement("tr");
       const sevClass =
         a.severity === "CRITICAL" ? "critical" :
@@ -169,9 +308,13 @@
     tbody.querySelectorAll("[data-invest]").forEach((btn) => {
       btn.addEventListener("click", () => {
         showView("investigate");
-        // Prefer matching case if possible
-        if (btn.dataset.invest === "AWS-DEL-01") document.getElementById("case-select").value = "case1";
-        else if (btn.dataset.invest === "AWS-HYD-06") document.getElementById("case-select").value = "case3";
+        if (btn.dataset.invest === "AWS-DEL-01" || btn.dataset.invest === "AWS-VAR-21") {
+          document.getElementById("case-select").value = "case1";
+        } else if (btn.dataset.invest === "AWS-HYD-06") {
+          document.getElementById("case-select").value = "case3";
+        } else {
+          document.getElementById("case-select").value = "case2";
+        }
         renderCase(document.getElementById("case-select").value);
       });
     });
@@ -181,12 +324,16 @@
     renderAnomalies(e.target.value);
   });
 
-  // ---------- Alerts ----------
+  // ============================================================
+  // ALERTS
+  // ============================================================
+
   function renderAlerts(containerId, limit = 100) {
     const el = document.getElementById(containerId);
     if (!el) return;
     el.innerHTML = "";
-    ALERTS.slice(0, limit).forEach((a) => {
+    const data = ALERTS || [];
+    data.slice(0, limit).forEach((a) => {
       const div = document.createElement("div");
       div.className = `alert-item ${a.severity}`;
       div.innerHTML = `
@@ -201,22 +348,23 @@
     });
   }
 
-  // ---------- Health ----------
+  // ============================================================
+  // HEALTH
+  // ============================================================
+
   function renderHealthTable() {
     const tbody = document.querySelector("#health-table tbody");
+    if (!tbody) return;
     tbody.innerHTML = "";
     STATIONS.forEach((st) => {
-      const state = STATION_STATE[st.id];
+      const state = STATION_STATE[st.id] || { health: 85, fault: null };
       const tempH = Math.max(20, state.health + (state.fault === "Spike" || state.fault === "Calibration" ? -30 : 5));
       const presH = Math.max(40, state.health + (state.fault === "Drift" ? -20 : 0));
       const humH = Math.max(30, state.health + (state.fault === "Frozen" ? -35 : 0));
-      const overall = state.health;
-      const drift =
-        state.fault === "Drift" || state.fault === "Calibration"
-          ? "Active drift"
-          : overall < 70
-          ? "Watch"
-          : "Stable";
+      const overall = state.health || 85;
+      const drift = state.fault === "Drift" || state.fault === "Calibration"
+        ? "Active drift"
+        : overall < 70 ? "Watch" : "Stable";
       const trend = overall < 60 ? "↓ Declining" : overall < 80 ? "→ Stable" : "↑ Good";
       const tr = document.createElement("tr");
       tr.innerHTML = `
@@ -230,10 +378,13 @@
       `;
       tbody.appendChild(tr);
     });
-    // aggregate health KPIs
-    document.getElementById("health-temp").textContent = "91%";
-    document.getElementById("health-pres").textContent = "88%";
-    document.getElementById("health-hum").textContent = "84%";
+    
+    const healthTemp = document.getElementById("health-temp");
+    const healthPres = document.getElementById("health-pres");
+    const healthHum = document.getElementById("health-hum");
+    if (healthTemp) healthTemp.textContent = "91%";
+    if (healthPres) healthPres.textContent = "88%";
+    if (healthHum) healthHum.textContent = "84%";
   }
 
   let healthChart;
@@ -275,8 +426,12 @@
     });
   }
 
-  // ---------- Live Stream Simulation ----------
+  // ============================================================
+  // LIVE STREAM
+  // ============================================================
+
   function randomAround(base, spread = 0.8) {
+    if (base == null) return null;
     return +(base + (Math.random() - 0.5) * spread * 2).toFixed(1);
   }
 
@@ -284,25 +439,34 @@
     const tbody = document.querySelector("#live-table tbody");
     if (!tbody) return;
     const st = STATIONS[Math.floor(Math.random() * STATIONS.length)];
-    const state = STATION_STATE[st.id];
+    const state = STATION_STATE[st.id] || { status: 'healthy' };
     const now = new Date().toLocaleTimeString("en-IN", { hour12: false });
     let temp = state.temp != null ? randomAround(state.temp) : null;
     let pressure = state.pressure != null ? randomAround(state.pressure, 1.2) : null;
     let humidity = state.humidity != null ? Math.round(randomAround(state.humidity, 2)) : null;
 
-    // occasionally inject anomaly for demo
     let qc = "PASS";
     let ml = (0.1 + Math.random() * 0.25).toFixed(2);
     let status = "normal";
+    let isAnomaly = false;
+    
     if (state.status === "critical" && Math.random() > 0.4) {
       qc = "FAIL";
       ml = (0.75 + Math.random() * 0.2).toFixed(2);
       status = "anomaly";
-      if (state.fault === "Spike") temp = +(40 + Math.random() * 18).toFixed(1);
+      isAnomaly = true;
+      if (state.fault === "Spike") {
+        temp = +(40 + Math.random() * 18).toFixed(1);
+      } else if (state.fault === "Frozen") {
+        humidity = 55;
+      } else if (state.fault === "Calibration") {
+        temp = +(38 + Math.random() * 6).toFixed(1);
+      }
     } else if (state.status === "warning" && Math.random() > 0.6) {
       qc = "WARN";
       ml = (0.45 + Math.random() * 0.25).toFixed(2);
       status = "anomaly";
+      isAnomaly = true;
     }
 
     const tr = document.createElement("tr");
@@ -318,6 +482,11 @@
     `;
     tbody.insertBefore(tr, tbody.firstChild);
     while (tbody.children.length > 12) tbody.removeChild(tbody.lastChild);
+    
+    if (isAnomaly) {
+      showToast(`🚨 Anomaly detected at ${st.id}!`, 'error');
+      playAlertSound();
+    }
   }
 
   let streamInterval;
@@ -326,70 +495,88 @@
     if (streamInterval) {
       clearInterval(streamInterval);
       streamInterval = null;
-      btn.textContent = "Simulate Live Stream";
+      btn.textContent = "▶ Simulate Live Stream";
+      showToast('⏹️ Live stream stopped', 'info');
     } else {
       pushLiveRow();
       streamInterval = setInterval(pushLiveRow, 2200);
-      btn.textContent = "Stop Simulation";
+      btn.textContent = "⏹ Stop Simulation";
+      showToast('▶️ Live stream started!', 'success');
     }
   });
 
-  // ---------- Investigation ----------
+  // ============================================================
+  // INVESTIGATION
+  // ============================================================
+
   function renderCase(key) {
     const c = CASES[key];
     if (!c) return;
     const isFault = c.assessment.includes("Sensor Fault") || c.assessment.includes("Communication");
-    document.getElementById("case-summary").innerHTML = `
-      <h4>${c.title}</h4>
-      <p style="color:var(--muted);font-size:13px">Demo case — synthetic scenario for SIH evaluation of Event vs Sensor Fault engine.</p>
-      <div class="assessment-row">
-        <div class="assessment-item ${isFault ? "fault" : "event"}">
-          <label>Assessment</label>
-          <strong>${c.assessment}</strong>
+    const summaryEl = document.getElementById("case-summary");
+    if (summaryEl) {
+      summaryEl.innerHTML = `
+        <h4>${c.title}</h4>
+        <p style="color:var(--muted);font-size:13px">Demo case — synthetic scenario for SIH evaluation of Event vs Sensor Fault engine.</p>
+        <div class="assessment-row">
+          <div class="assessment-item ${isFault ? "fault" : "event"}">
+            <label>Assessment</label>
+            <strong>${c.assessment}</strong>
+          </div>
+          <div class="assessment-item">
+            <label>Confidence</label>
+            <strong>${c.confidence}%</strong>
+          </div>
+          <div class="assessment-item">
+            <label>Severity</label>
+            <strong>${c.severity}</strong>
+          </div>
+          <div class="assessment-item">
+            <label>ML Score</label>
+            <strong>${c.ml.score}</strong>
+          </div>
+          <div class="assessment-item">
+            <label>Fault Type</label>
+            <strong>${c.ml.type}</strong>
+          </div>
         </div>
-        <div class="assessment-item">
-          <label>Confidence</label>
-          <strong>${c.confidence}%</strong>
-        </div>
-        <div class="assessment-item">
-          <label>Severity</label>
-          <strong>${c.severity}</strong>
-        </div>
-        <div class="assessment-item">
-          <label>ML Score</label>
-          <strong>${c.ml.score}</strong>
-        </div>
-        <div class="assessment-item">
-          <label>Fault Type</label>
-          <strong>${c.ml.type}</strong>
-        </div>
-      </div>
-    `;
+      `;
+    }
 
-    document.getElementById("case-context").innerHTML = `
-      <dl>
-        <dt>Observed Temp</dt><dd>${c.observed.temp}°C</dd>
-        <dt>Pressure</dt><dd>${c.observed.pressure} hPa</dd>
-        <dt>Humidity</dt><dd>${c.observed.humidity}%</dd>
-        <dt>Nearby stations</dt>
-        <dd>${c.nearby.map((n) => `${n.id}: ${n.temp != null ? n.temp + "°C" : n.humidity + "% RH"}`).join(" · ")}</dd>
-        <dt>Sensor Health</dt>
-        <dd>T ${c.health.temp}% · P ${c.health.pressure}% · H ${c.health.humidity}% · Overall ${c.health.overall}%</dd>
-      </dl>
-    `;
+    const contextEl = document.getElementById("case-context");
+    if (contextEl) {
+      contextEl.innerHTML = `
+        <dl>
+          <dt>Observed Temp</dt><dd>${c.observed.temp}°C</dd>
+          <dt>Pressure</dt><dd>${c.observed.pressure} hPa</dd>
+          <dt>Humidity</dt><dd>${c.observed.humidity}%</dd>
+          <dt>Nearby stations</dt>
+          <dd>${c.nearby.map((n) => `${n.id}: ${n.temp != null ? n.temp + "°C" : n.humidity + "% RH"}`).join(" · ")}</dd>
+          <dt>Sensor Health</dt>
+          <dd>T ${c.health.temp}% · P ${c.health.pressure}% · H ${c.health.humidity}% · Overall ${c.health.overall}%</dd>
+        </dl>
+      `;
+    }
 
-    document.getElementById("case-evidence").innerHTML = c.evidence
-      .map(
-        (e) => `
-      <div class="evidence-item">
-        <span class="dot ${e.kind}"></span>
-        <span>${e.text}</span>
-      </div>`
-      )
-      .join("");
+    const evidenceEl = document.getElementById("case-evidence");
+    if (evidenceEl) {
+      evidenceEl.innerHTML = c.evidence.map(e => `
+        <div class="evidence-item">
+          <span class="dot ${e.kind}"></span>
+          <span>${e.text}</span>
+        </div>
+      `).join("");
+    }
 
-    document.getElementById("case-xai").innerHTML = c.xai;
-    document.getElementById("case-reco").innerHTML = `<strong>Recommended action:</strong> ${c.reco}`;
+    const xaiEl = document.getElementById("case-xai");
+    if (xaiEl) {
+      xaiEl.innerHTML = c.xai;
+    }
+
+    const recoEl = document.getElementById("case-reco");
+    if (recoEl) {
+      recoEl.innerHTML = `<strong>Recommended action:</strong> ${c.reco}`;
+    }
   }
 
   document.getElementById("case-select")?.addEventListener("change", (e) => {
@@ -397,22 +584,32 @@
   });
 
   document.getElementById("accept-reco")?.addEventListener("click", () => {
+    showToast('✅ Recommendation accepted and logged!', 'success');
     alert("Recommendation accepted and logged.\n\nHuman decision recorded. Observation remains unchanged (human-in-the-loop).");
   });
+  
   document.getElementById("override-btn")?.addEventListener("click", () => {
+    showToast('⚠️ Operator override recorded!', 'warning');
     alert("Operator override recorded.\n\nYou may mark this as genuine weather or request further investigation. Official data is never auto-overwritten.");
   });
+  
   document.getElementById("mark-review")?.addEventListener("click", () => {
+    showToast('📋 Case marked for review!', 'info');
     alert("Case marked for senior review. Ticket created in ops queue.");
   });
 
-  // ---------- Charts ----------
+  // ============================================================
+  // CHARTS
+  // ============================================================
+
   let typeChart, dailyChart;
   function renderCharts() {
-    if (typeChart) return; // once
     const typeCtx = document.getElementById("anomaly-type-chart");
     const dailyCtx = document.getElementById("anomaly-daily-chart");
     if (!typeCtx || !dailyCtx) return;
+    
+    if (typeChart) typeChart.destroy();
+    if (dailyChart) dailyChart.destroy();
 
     typeChart = new Chart(typeCtx, {
       type: "doughnut",
@@ -448,12 +645,16 @@
     });
   }
 
-  // ---------- Modal ----------
+  // ============================================================
+  // MODAL
+  // ============================================================
+
   function openStationModal(id) {
     const st = STATIONS.find((s) => s.id === id);
     const state = STATION_STATE[id];
     if (!st) return;
     const body = document.getElementById("modal-body");
+    if (!body) return;
     body.innerHTML = `
       <h3 style="margin-bottom:8px">${st.id} — ${st.name}</h3>
       <p style="color:var(--muted);font-size:13px;margin-bottom:16px">${st.region} · ${st.lat}, ${st.lon}</p>
@@ -470,36 +671,62 @@
       <p style="margin-top:16px;font-size:12px;color:var(--muted)">Simulated reading for prototype demonstration. Production system would stream live AWS observations.</p>
       <button class="btn-primary" style="margin-top:16px;width:auto" id="modal-investigate">Open Investigation</button>
     `;
-    document.getElementById("station-modal").classList.remove("hidden");
+    const modal = document.getElementById("station-modal");
+    if (modal) modal.classList.remove("hidden");
     document.getElementById("modal-investigate")?.addEventListener("click", () => {
-      document.getElementById("station-modal").classList.add("hidden");
+      if (modal) modal.classList.add("hidden");
       showView("investigate");
-      if (id === "AWS-DEL-01" || id === "AWS-VAR-21") document.getElementById("case-select").value = "case1";
-      else if (id === "AWS-HYD-06") document.getElementById("case-select").value = "case3";
-      else document.getElementById("case-select").value = "case2";
+      if (id === "AWS-DEL-01" || id === "AWS-VAR-21") {
+        document.getElementById("case-select").value = "case1";
+      } else if (id === "AWS-HYD-06") {
+        document.getElementById("case-select").value = "case3";
+      } else {
+        document.getElementById("case-select").value = "case2";
+      }
       renderCase(document.getElementById("case-select").value);
     });
   }
 
   document.getElementById("modal-close")?.addEventListener("click", () => {
-    document.getElementById("station-modal").classList.add("hidden");
+    document.getElementById("station-modal")?.classList.add("hidden");
   });
   document.getElementById("station-modal")?.addEventListener("click", (e) => {
     if (e.target.id === "station-modal") e.target.classList.add("hidden");
   });
 
-  // ---------- Init ----------
+  // ============================================================
+  // AUTO-REFRESH
+  // ============================================================
+
+  function fetchAllData() {
+    computeKPIs();
+    renderAnomalies(document.getElementById("anomaly-filter")?.value || 'all');
+    renderAlerts("recent-alerts", 5);
+    renderAlerts("alerts-full");
+    renderHealthTable();
+  }
+
+  // Auto-refresh every 30 seconds
+  setInterval(() => {
+    fetchAllData();
+    console.log('🔄 Dashboard auto-refreshed at', new Date().toLocaleTimeString());
+  }, 30000);
+
+  // ============================================================
+  // INIT
+  // ============================================================
+
   function initApp() {
     updateClock();
     setInterval(updateClock, 1000);
     computeKPIs();
-    setTimeout(initMap, 100); // allow layout
+    setTimeout(initMap, 100);
     renderStations();
     renderAnomalies();
     renderAlerts("recent-alerts", 5);
     renderAlerts("alerts-full");
     renderHealthTable();
-    // seed a few live rows
     for (let i = 0; i < 5; i++) pushLiveRow();
+    showToast('🌤️ AtmosAi initialized successfully!', 'success');
   }
 })();
