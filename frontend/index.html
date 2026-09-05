@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AtmosAi — Detect. Explain. Protect.</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+  <!-- Login Screen -->
+  <div id="login-screen" class="login-screen">
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="logo-icon">A</div>
+        <div>
+          <h1>AtmosAi</h1>
+          <p class="tagline">Detect. Explain. Protect.</p>
+        </div>
+      </div>
+      <p class="login-sub">AI-Powered Automatic Weather Station Quality Control & Sensor Health Platform</p>
+      <form id="login-form">
+        <label>Operator ID</label>
+        <input type="text" id="username" value="operator.demo" required />
+        <label>Password</label>
+        <input type="password" id="password" value="atmosai2026" required />
+        <button type="submit" class="btn-primary">Sign In to Command Center</button>
+      </form>
+      <p class="login-hint">Demo credentials pre-filled · SIH26073 Prototype</p>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app" class="app hidden">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo-icon small">A</div>
+        <div>
+          <strong>AtmosAi</strong>
+          <span class="badge">OPS</span>
+        </div>
+      </div>
+      <nav class="nav">
+        <button class="nav-item active" data-view="dashboard">
+          <span class="nav-icon">◈</span> Dashboard
+        </button>
+        <button class="nav-item" data-view="stations">
+          <span class="nav-icon">◉</span> Stations
+        </button>
+        <button class="nav-item" data-view="anomalies">
+          <span class="nav-icon">⚠</span> Anomalies
+        </button>
+        <button class="nav-item" data-view="alerts">
+          <span class="nav-icon">🔔</span> Alerts
+        </button>
+        <button class="nav-item" data-view="health">
+          <span class="nav-icon">♥</span> Sensor Health
+        </button>
+        <button class="nav-item" data-view="investigate">
+          <span class="nav-icon">🔍</span> Investigate
+        </button>
+        <button class="nav-item" data-view="analytics">
+          <span class="nav-icon">📊</span> Analytics
+        </button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-chip">
+          <span class="avatar">OD</span>
+          <div>
+            <div class="user-name">Operator Demo</div>
+            <div class="user-role">QC Analyst</div>
+          </div>
+        </div>
+        <button id="logout-btn" class="btn-ghost">Logout</button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <h2 id="view-title">Operational Dashboard</h2>
+          <span class="live-pill"><span class="pulse"></span> LIVE</span>
+        </div>
+        <div class="topbar-right">
+          <div class="clock" id="clock"></div>
+          <button class="btn-secondary" id="simulate-btn">Simulate Live Stream</button>
+        </div>
+      </header>
+
+      <!-- DASHBOARD VIEW -->
+      <section id="view-dashboard" class="view active">
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">Total AWS Stations</div>
+            <div class="kpi-value" id="kpi-total">48</div>
+            <div class="kpi-sub">Across India network</div>
+          </div>
+          <div class="kpi-card healthy">
+            <div class="kpi-label">Healthy</div>
+            <div class="kpi-value" id="kpi-healthy">39</div>
+            <div class="kpi-sub">Normal operation</div>
+          </div>
+          <div class="kpi-card warning">
+            <div class="kpi-label">Warning</div>
+            <div class="kpi-value" id="kpi-warning">6</div>
+            <div class="kpi-sub">Needs attention</div>
+          </div>
+          <div class="kpi-card critical">
+            <div class="kpi-label">Critical</div>
+            <div class="kpi-value" id="kpi-critical">3</div>
+            <div class="kpi-sub">Immediate action</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Active Anomalies</div>
+            <div class="kpi-value" id="kpi-anomalies">11</div>
+            <div class="kpi-sub">Last 24 hours</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Avg Sensor Health</div>
+            <div class="kpi-value" id="kpi-health">87%</div>
+            <div class="kpi-sub">Network average</div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header">
+              <h3>India AWS Station Map</h3>
+              <span class="panel-hint">Click station for details</span>
+            </div>
+            <div id="map" class="map-container"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Recent Alerts</h3>
+              <button class="link-btn" data-view="alerts">View all →</button>
+            </div>
+            <div id="recent-alerts" class="alert-list"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h3>Live Observation Stream (Simulated)</h3>
+            <span class="panel-hint">Temperature · Pressure · Humidity</span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="live-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Station</th>
+                  <th>Temp (°C)</th>
+                  <th>Pressure (hPa)</th>
+                  <th>Humidity (%)</th>
+                  <th>QC</th>
+                  <th>ML Score</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- STATIONS VIEW -->
+      <section id="view-stations" class="view">
+        <div class="panel">
+          <div class="panel-header">
+            <h3>AWS Station Inventory</h3>
+            <input type="search" id="station-search" placeholder="Search station ID or name…" class="search-input" />
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="stations-table">
+              <thead>
+                <tr>
+                  <th>Station ID</th>
+                  <th>Name / Location</th>
+                  <th>Lat / Lon</th>
+                  <th>Temp</th>
+                  <th>Pressure</th>
+                  <th>Humidity</th>
+                  <th>Health</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ANOMALIES VIEW -->
+      <section id="view-anomalies" class="view">
+        <div class="panel">
+          <div class="panel-header">
+            <h3>Anomaly History</h3>
+            <div class="filter-group">
+              <select id="anomaly-filter">
+                <option value="all">All types</option>
+                <option value="Spike">Spike</option>
+                <option value="Frozen">Frozen / Stuck</option>
+                <option value="Drift">Drift</option>
+                <option value="Communication">Communication</option>
+                <option value="Calibration">Calibration</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="anomalies-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Station</th>
+                  <th>Parameter</th>
+                  <th>Value</th>
+                  <th>Fault Type</th>
+                  <th>Severity</th>
+                  <th>Confidence</th>
+                  <th>Assessment</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ALERTS VIEW -->
+      <section id="view-alerts" class="view">
+        <div class="panel">
+          <div class="panel-header">
+            <h3>Alert Center</h3>
+            <span class="panel-hint">Operator recommendations · Human decides</span>
+          </div>
+          <div id="alerts-full" class="alert-list full"></div>
+        </div>
+      </section>
+
+      <!-- SENSOR HEALTH VIEW -->
+      <section id="view-health" class="view">
+        <div class="kpi-grid three">
+          <div class="kpi-card">
+            <div class="kpi-label">Temperature Sensors</div>
+            <div class="kpi-value" id="health-temp">91%</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Pressure Sensors</div>
+            <div class="kpi-value" id="health-pres">88%</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Humidity Sensors</div>
+            <div class="kpi-value" id="health-hum">84%</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">
+            <h3>Station Sensor Health & Calibration Drift</h3>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="health-table">
+              <thead>
+                <tr>
+                  <th>Station</th>
+                  <th>Temp Health</th>
+                  <th>Pressure Health</th>
+                  <th>Humidity Health</th>
+                  <th>Overall</th>
+                  <th>Drift Status</th>
+                  <th>Trend</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><h3>Health Trend (Selected Station)</h3></div>
+          <canvas id="health-chart" height="100"></canvas>
+        </div>
+      </section>
+
+      <!-- INVESTIGATE VIEW (Core differentiator) -->
+      <section id="view-investigate" class="view">
+        <div class="investigate-layout">
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Case Investigation</h3>
+              <select id="case-select">
+                <option value="case1">Case 1 — Temperature Spike (Likely Sensor Fault)</option>
+                <option value="case2">Case 2 — Regional Heat Event (Genuine Weather)</option>
+                <option value="case3">Case 3 — Frozen Humidity Sensor</option>
+              </select>
+            </div>
+            <div id="case-summary" class="case-summary"></div>
+          </div>
+
+          <div class="grid-2">
+            <div class="panel">
+              <div class="panel-header"><h3>Observation Context</h3></div>
+              <div id="case-context" class="case-context"></div>
+            </div>
+            <div class="panel">
+              <div class="panel-header"><h3>Evidence Stack</h3></div>
+              <div id="case-evidence" class="evidence-list"></div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header"><h3>AtmosAi-XAI Explanation</h3></div>
+            <div id="case-xai" class="xai-box"></div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header"><h3>Recommendation & Human Decision</h3></div>
+            <div id="case-reco" class="reco-box"></div>
+            <div class="decision-actions">
+              <button class="btn-primary" id="accept-reco">Accept Recommendation</button>
+              <button class="btn-secondary" id="override-btn">Override (Operator Judgment)</button>
+              <button class="btn-ghost" id="mark-review">Mark for Review</button>
+            </div>
+            <p class="principle-note">Core principle: <em>ML detects → Intelligence investigates → XAI explains → Sensor Health assesses → System recommends → Human decides.</em></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ANALYTICS VIEW -->
+      <section id="view-analytics" class="view">
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header"><h3>Anomaly Types (Last 7 Days)</h3></div>
+            <canvas id="anomaly-type-chart"></canvas>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><h3>Daily Anomaly Count</h3></div>
+            <canvas id="anomaly-daily-chart"></canvas>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><h3>Model Performance Snapshot (Demo)</h3></div>
+          <div class="metrics-grid">
+            <div class="metric"><span class="m-label">Precision</span><span class="m-val">0.91</span></div>
+            <div class="metric"><span class="m-label">Recall</span><span class="m-val">0.87</span></div>
+            <div class="metric"><span class="m-label">F1-Score</span><span class="m-val">0.89</span></div>
+            <div class="metric"><span class="m-label">False Positive Rate</span><span class="m-val">0.06</span></div>
+          </div>
+          <p class="note">Metrics from synthetic + held-out evaluation. Real production metrics require continuous monitoring against operator feedback.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Station Detail Modal -->
+  <div id="station-modal" class="modal hidden">
+    <div class="modal-content">
+      <button class="modal-close" id="modal-close">×</button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
