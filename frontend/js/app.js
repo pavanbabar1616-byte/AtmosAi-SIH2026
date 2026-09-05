@@ -1,6 +1,11 @@
 // AtmosAi Operational Prototype
 // SIH26073 — Detect. Explain. Protect.
-
+// Import API functions
+import { 
+    fetchDashboard, fetchStations, fetchAnomalies, 
+    fetchSensorHealth, detectAnomaly, connectWebSocket,
+    submitFeedback, fetchFeedbackStats
+} from './api.js';
 (function () {
   "use strict";
 
@@ -292,17 +297,22 @@
         a.severity === "CRITICAL" ? "critical" :
         a.severity === "HIGH" ? "critical" :
         a.severity === "MEDIUM" ? "warning" : "healthy";
-      tr.innerHTML = `
-        <td>${a.time}</td>
-        <td><strong>${a.station}</strong></td>
-        <td>${a.param}</td>
-        <td>${a.value}</td>
-        <td>${a.type}</td>
-        <td><span class="status-pill ${sevClass}">${a.severity}</span></td>
-        <td>${a.conf}%</td>
-        <td>${a.assessment}</td>
-        <td><button class="btn-secondary" data-invest="${a.station}">Investigate</button></td>
-      `;
+      td.innerHTML = `
+    <td>${a.time}</td>
+    <td><strong>${a.station}</strong></td>
+    <td>${a.param}</td>
+    <td>${a.value}</td>
+    <td>${a.type}</td>
+    <td><span class="status-pill ${sevClass}">${a.severity}</span></td>
+    <td>${a.conf}%</td>
+    <td>${a.assessment}</td>
+    <td>
+        <button class="btn-secondary" data-invest="${a.station}" style="margin-right:4px;font-size:11px;">🔍</button>
+        <button class="btn-secondary" data-feedback="confirm" data-id="${a.id || index}" style="font-size:11px;background:rgba(34,197,94,0.1);">✅</button>
+        <button class="btn-secondary" data-feedback="reject" data-id="${a.id || index}" style="font-size:11px;background:rgba(239,68,68,0.1);">❌</button>
+    </td>
+`;
+      
       tbody.appendChild(tr);
     });
     tbody.querySelectorAll("[data-invest]").forEach((btn) => {
@@ -323,7 +333,19 @@
   document.getElementById("anomaly-filter")?.addEventListener("change", (e) => {
     renderAnomalies(e.target.value);
   });
-
+  tbody.querySelectorAll("[data-feedback]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+        const action = btn.dataset.feedback;
+        const anomalyId = btn.dataset.id;
+        const row = btn.closest('tr');
+        const station = row.querySelector('td:nth-child(2)')?.textContent || 'unknown';
+        
+        const decision = action === 'confirm' ? 'confirmed' : 'false_positive';
+        await submitFeedback(anomalyId, station, decision);
+        showToast(`✅ Feedback recorded: ${decision}`, 'success');
+        updateFeedbackStats();
+    });
+});
   // ============================================================
   // ALERTS
   // ============================================================
@@ -425,7 +447,7 @@
       },
     });
   }
-
+  
   // ============================================================
   // LIVE STREAM
   // ============================================================
@@ -698,13 +720,86 @@
   // AUTO-REFRESH
   // ============================================================
 
-  function fetchAllData() {
-    computeKPIs();
-    renderAnomalies(document.getElementById("anomaly-filter")?.value || 'all');
-    renderAlerts("recent-alerts", 5);
-    renderAlerts("alerts-full");
-    renderHealthTable();
-  }
+  async function fetchAllData() {
+    try {
+        const dashboard = await fetchDashboard();
+        const anomalies = await fetchAnomalies();
+        const stations = await fetchStations();
+        const health = await fetchSensorHealth();
+        
+        // Update global data
+        window.dashboardData = dashboard;
+        window.anomalyData = anomalies;
+        window.stationData = stations;
+        window.healthData = health;
+        
+        // Update UI
+        computeKPIs();
+        renderAnomalies(document.getElementById("anomaly-filter")?.value || 'all');
+        renderAlerts("recent-alerts", 5);
+        renderAlerts("alerts-full");
+        renderHealthTable();
+        updateFeedbackStats();
+        
+        return { dashboard, anomalies, stations, health };
+    } catch (error) {
+        console.error('Error fetching data:', error);
+        showToast('❌ Failed to fetch data from server', 'error');
+        return null;
+    }
+}
+// ===== WEBSOCKET LIVE STREAM =====
+
+let ws = null;
+let wsConnected = false;
+
+function initWebSocket() {
+    ws = connectWebSocket(
+        (data) => {
+            // Add to live table
+            addLiveRow(data);
+            
+            // If anomaly, show alert
+            if (data.status === 'ANOMALY') {
+                showToast(`🚨 Anomaly detected at ${data.station_id}!`, 'error');
+                playAlertSound();
+            }
+        },
+        () => {
+            wsConnected = true;
+            showToast('🌐 Live stream connected!', 'success');
+            document.getElementById('connection-status').textContent = '🟢 Connected';
+        },
+        () => {
+            wsConnected = false;
+            showToast('❌ Live stream disconnected', 'error');
+            document.getElementById('connection-status').textContent = '🔴 Disconnected';
+        }
+    );
+}
+
+function addLiveRow(data) {
+    const tbody = document.querySelector("#live-table tbody");
+    if (!tbody) return;
+    
+    const now = new Date().toLocaleTimeString("en-IN", { hour12: false });
+    const statusClass = data.status === 'ANOMALY' ? 'anomaly' : 'normal';
+    const qc = data.status === 'ANOMALY' ? 'FAIL' : 'PASS';
+    
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+        <td>${now}</td>
+        <td><strong>${data.station_id}</strong></td>
+        <td>${data.temperature}</td>
+        <td>${data.pressure}</td>
+        <td>${data.humidity}</td>
+        <td>${qc}</td>
+        <td>${data.anomaly_score?.toFixed(4) || '0.0000'}</td>
+        <td><span class="status-pill ${statusClass}">${data.status}</span></td>
+    `;
+    tbody.insertBefore(tr, tbody.firstChild);
+    while (tbody.children.length > 12) tbody.removeChild(tbody.lastChild);
+}
 
   // Auto-refresh every 30 seconds
   setInterval(() => {
@@ -719,14 +814,34 @@
   function initApp() {
     updateClock();
     setInterval(updateClock, 1000);
-    computeKPIs();
-    setTimeout(initMap, 100);
-    renderStations();
-    renderAnomalies();
-    renderAlerts("recent-alerts", 5);
-    renderAlerts("alerts-full");
-    renderHealthTable();
-    for (let i = 0; i < 5; i++) pushLiveRow();
-    showToast('🌤️ AtmosAi initialized successfully!', 'success');
-  }
+    
+    showToast('🔄 Loading data...', 'info');
+    
+    fetchAllData().then(() => {
+        setTimeout(initMap, 100);
+        renderStations();
+        renderAnomalies();
+        renderAlerts("recent-alerts", 5);
+        renderAlerts("alerts-full");
+        renderHealthTable();
+        updateFeedbackStats();
+        showToast('🌤️ AtmosAi ready!', 'success');
+    });
+    
+    // Initialize WebSocket for live stream
+    initWebSocket();
+}
+// ===== FEEDBACK STATS =====
+
+async function updateFeedbackStats() {
+    try {
+        const stats = await fetchFeedbackStats();
+        document.getElementById('fb-total').textContent = stats.total || 0;
+        document.getElementById('fb-confirmed').textContent = stats.confirmed || 0;
+        document.getElementById('fb-fp').textContent = stats.false_positives || 0;
+        document.getElementById('fb-accuracy').textContent = stats.accuracy + '%' || '0%';
+    } catch (e) {
+        console.log('Feedback stats not available');
+    }
+}
 })();

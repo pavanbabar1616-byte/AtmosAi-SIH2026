@@ -248,6 +248,17 @@
               </thead>
               <tbody></tbody>
             </table>
+            <!-- Feedback Section -->
+            <div class="feedback-section" style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;">
+                <h4 style="font-size:14px;color:var(--text);">📊 Human Feedback Dashboard</h4>
+                <div style="display:flex;gap:24px;margin-top:10px;flex-wrap:wrap;">
+                    <div><strong>Total Feedback:</strong> <span id="fb-total" style="color:var(--accent);">0</span></div>
+                    <div style="color:#22c55e;"><strong>Confirmed:</strong> <span id="fb-confirmed">0</span></div>
+                    <div style="color:#ef4444;"><strong>False Positives:</strong> <span id="fb-fp">0</span></div>
+                    <div><strong>Accuracy:</strong> <span id="fb-accuracy" style="color:var(--accent);">0%</span></div>
+                </div>
+                <p style="font-size:11px;color:var(--muted);margin-top:8px;">Human-in-the-loop: System recommends → Human decides → Model improves</p>
+            </div>
           </div>
         </div>
       </section>

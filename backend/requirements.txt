@@ -3,8 +3,8 @@ uvicorn[standard]==0.24.0
 python-dotenv==1.0.0
 sqlalchemy==2.0.23
 pandas==2.1.3
-numpy>=1.26.0
+numpy==1.26.2
+# numpy 1.26.2 works with all our packages
 scikit-learn==1.3.2
-tensorflow==2.21.0
-shap==0.43.0
 python-multipart==0.0.6
+joblib==1.3.2
