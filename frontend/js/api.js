@@ -1,8 +1,8 @@
 // frontend/js/api.js
 // Real API integration
 
-const API_URL = 'http://localhost:8000/api';
-const WS_URL = 'ws://localhost:8000/ws/live';
+const API_URL = 'https://atmosai-sih2026.up.railway.app/api';
+const WS_URL = 'wss://atmosai-sih2026.up.railway.app/ws/live';
 
 // ===== REST API FUNCTIONS =====
 
