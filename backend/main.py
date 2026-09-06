@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 import random
 import asyncio
+import os
 from pydantic import BaseModel
 
 from data_generator import AWSDataGenerator
@@ -13,14 +14,16 @@ from ml_detector import AnomalyDetector
 # Initialize FastAPI
 app = FastAPI(title="AtmosAi API", version="2.0.0")
 
-# CORS
+# ===== CORS =====
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Allow all origins for demo
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ... rest of your code
 
 # ============= DATA MODELS =============
 
