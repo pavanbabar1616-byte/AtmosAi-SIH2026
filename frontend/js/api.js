@@ -1,5 +1,5 @@
 // frontend/js/api.js
-// Real API integration
+// Real API integration - Railway Backend
 
 const API_URL = 'https://atmosai-sih2026.up.railway.app/api';
 const WS_URL = 'wss://atmosai-sih2026.up.railway.app/ws/live';
@@ -79,7 +79,7 @@ export function connectWebSocket(onMessage, onConnect, onDisconnect) {
     const ws = new WebSocket(WS_URL);
     
     ws.onopen = () => {
-        console.log('✅ WebSocket connected');
+        console.log('✅ WebSocket connected to Railway');
         if (onConnect) onConnect();
     };
     
