@@ -1,13 +1,24 @@
 // AtmosAi Operational Prototype
 // SIH26073 — Detect. Explain. Protect.
-// Import API functions
-import { 
-    fetchDashboard, fetchStations, fetchAnomalies, 
-    fetchSensorHealth, detectAnomaly, connectWebSocket,
-    submitFeedback, fetchFeedbackStats
-} from './api.js';
+
 (function () {
   "use strict";
+
+  // ============================================================
+  // API CONFIGURATION
+  // ============================================================
+  
+  const API_URL = 'http://localhost:8000/api';
+  const WS_URL = 'ws://localhost:8000/ws/live';
+
+  // ============================================================
+  // GLOBAL DATA (will be populated from API)
+  // ============================================================
+  
+  let dashboardData = null;
+  let anomalyData = [];
+  let stationData = [];
+  let healthData = {};
 
   // ============================================================
   // LOGIN / LOGOUT
@@ -19,6 +30,7 @@ import {
 
   loginForm.addEventListener("submit", (e) => {
     e.preventDefault();
+    console.log('✅ Login clicked');
     loginScreen.classList.add("hidden");
     app.classList.remove("hidden");
     initApp();
@@ -156,10 +168,10 @@ import {
   // ============================================================
 
   window.exportReport = function() {
-    const anomalies = ANOMALIES || [];
+    const data = anomalyData || [];
     let csv = 'Time,Station,Parameter,Value,Type,Severity,Confidence,Assessment\n';
-    anomalies.forEach(a => {
-      csv += `${a.time},${a.station},${a.param},${a.value},${a.type},${a.severity},${a.conf},${a.assessment}\n`;
+    data.forEach(a => {
+      csv += `${a.time || a.timestamp || ''},${a.station || a.station_id || ''},${a.param || 'Temperature'},${a.value || a.temperature || ''},${a.type || a.fault_type || ''},${a.severity || 'LOW'},${a.conf || (a.confidence ? Math.round(a.confidence * 100) : 0)},${a.assessment || (a.is_anomaly ? 'Anomaly' : 'Normal')}\n`;
     });
     
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -173,27 +185,83 @@ import {
   };
 
   // ============================================================
+  // API CALLS
+  // ============================================================
+
+  async function fetchDashboard() {
+    const response = await fetch(`${API_URL}/dashboard`);
+    return await response.json();
+  }
+
+  async function fetchStations() {
+    const response = await fetch(`${API_URL}/stations`);
+    const data = await response.json();
+    return data.stations || [];
+  }
+
+  async function fetchAnomalies() {
+    const response = await fetch(`${API_URL}/anomalies`);
+    const data = await response.json();
+    return data.anomalies || [];
+  }
+
+  async function fetchSensorHealth() {
+    const response = await fetch(`${API_URL}/sensor-health`);
+    const data = await response.json();
+    return data.sensor_health || {};
+  }
+
+  async function submitFeedback(anomaly_id, station_id, user_decision, notes = '') {
+    const response = await fetch(`${API_URL}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        anomaly_id,
+        station_id,
+        timestamp: new Date().toISOString(),
+        user_decision,
+        notes
+      })
+    });
+    return await response.json();
+  }
+
+  async function fetchFeedbackStats() {
+    const response = await fetch(`${API_URL}/feedback/stats`);
+    return await response.json();
+  }
+
+  // ============================================================
   // KPIs
   // ============================================================
 
   function computeKPIs() {
-    const states = Object.values(STATION_STATE);
-    const total = states.length;
-    const healthy = states.filter((s) => s.status === "healthy").length;
-    const warning = states.filter((s) => s.status === "warning").length;
-    const critical = states.filter((s) => s.status === "critical").length;
-    const avgHealth = Math.round(states.reduce((a, s) => a + s.health, 0) / total);
+    const data = dashboardData || { 
+      total_stations: 5, 
+      station_status: { healthy: 0, warning: 0, critical: 0 },
+      active_anomalies: 0,
+      avg_sensor_health: 85
+    };
+    
+    const total = data.total_stations || 5;
+    const healthy = data.station_status?.healthy || 0;
+    const warning = data.station_status?.warning || 0;
+    const critical = data.station_status?.critical || 0;
+    const avgHealth = data.avg_sensor_health || 85;
+    const anomaliesCount = data.active_anomalies || 0;
+    
     const kpiTotal = document.getElementById("kpi-total");
     const kpiHealthy = document.getElementById("kpi-healthy");
     const kpiWarning = document.getElementById("kpi-warning");
     const kpiCritical = document.getElementById("kpi-critical");
     const kpiAnomalies = document.getElementById("kpi-anomalies");
     const kpiHealth = document.getElementById("kpi-health");
+    
     if (kpiTotal) kpiTotal.textContent = total;
     if (kpiHealthy) kpiHealthy.textContent = healthy;
     if (kpiWarning) kpiWarning.textContent = warning;
     if (kpiCritical) kpiCritical.textContent = critical;
-    if (kpiAnomalies) kpiAnomalies.textContent = ANOMALIES.length;
+    if (kpiAnomalies) kpiAnomalies.textContent = anomaliesCount;
     if (kpiHealth) kpiHealth.textContent = avgHealth + "%";
   }
 
@@ -210,11 +278,16 @@ import {
       maxZoom: 18,
     }).addTo(map);
 
-    STATIONS.forEach((st) => {
-      const state = STATION_STATE[st.id] || { status: "healthy", health: 90 };
-      const color =
-        state.status === "critical" ? "#ef4444" :
-        state.status === "warning" ? "#f59e0b" : "#22c55e";
+    const stations = stationData.length > 0 ? stationData : [
+      { id: "AWS001", name: "Delhi", lat: 28.61, lon: 77.23 },
+      { id: "AWS002", name: "Mumbai", lat: 19.07, lon: 72.87 },
+      { id: "AWS003", name: "Bangalore", lat: 12.97, lon: 77.59 },
+      { id: "AWS004", name: "Chennai", lat: 13.08, lon: 80.28 },
+      { id: "AWS005", name: "Kolkata", lat: 22.57, lon: 88.36 },
+    ];
+
+    stations.forEach((st) => {
+      const color = "#22c55e";
       const marker = L.circleMarker([st.lat, st.lon], {
         radius: 8,
         fillColor: color,
@@ -225,16 +298,14 @@ import {
       marker.bindPopup(`
         <strong>${st.id}</strong><br/>
         ${st.name}<br/>
-        Status: <b style="color:${color}">${state.status.toUpperCase()}</b><br/>
-        Health: ${state.health}%<br/>
-        Temp: ${state.temp ?? "—"}°C
+        Status: <b style="color:${color}">ACTIVE</b>
       `);
       marker.on("click", () => openStationModal(st.id));
     });
   }
 
   // ============================================================
-  // STATIONS TABLE (with Search & Filter)
+  // STATIONS TABLE
   // ============================================================
 
   function renderStations(search = '', statusFilter = 'all') {
@@ -243,25 +314,30 @@ import {
     const q = search.toLowerCase();
     tbody.innerHTML = '';
     
-    const filtered = STATIONS.filter(s => {
-      const state = STATION_STATE[s.id];
+    const stations = stationData.length > 0 ? stationData : [
+      { id: "AWS001", name: "Delhi", lat: 28.61, lon: 77.23, region: "North" },
+      { id: "AWS002", name: "Mumbai", lat: 19.07, lon: 72.87, region: "West" },
+      { id: "AWS003", name: "Bangalore", lat: 12.97, lon: 77.59, region: "South" },
+      { id: "AWS004", name: "Chennai", lat: 13.08, lon: 80.28, region: "South" },
+      { id: "AWS005", name: "Kolkata", lat: 22.57, lon: 88.36, region: "East" },
+    ];
+    
+    const filtered = stations.filter(s => {
       const matchesSearch = !q || s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q);
-      const matchesStatus = statusFilter === 'all' || (state && state.status === statusFilter);
-      return matchesSearch && matchesStatus;
+      return matchesSearch;
     });
     
     filtered.forEach((st) => {
-      const state = STATION_STATE[st.id] || { status: 'unknown', health: 0 };
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><strong>${st.id}</strong></td>
-        <td>${st.name}<br/><span style="color:var(--muted);font-size:11px">${st.region}</span></td>
+        <td>${st.name}<br/><span style="color:var(--muted);font-size:11px">${st.region || 'India'}</span></td>
         <td>${st.lat.toFixed(2)}, ${st.lon.toFixed(2)}</td>
-        <td>${state.temp != null ? state.temp + "°C" : "—"}</td>
-        <td>${state.pressure != null ? state.pressure : "—"}</td>
-        <td>${state.humidity != null ? state.humidity + "%" : "—"}</td>
-        <td>${state.health || 0}%</td>
-        <td><span class="status-pill ${state.status || 'unknown'}">${state.status || 'unknown'}</span></td>
+        <td>—</td>
+        <td>—</td>
+        <td>—</td>
+        <td>85%</td>
+        <td><span class="status-pill healthy">healthy</span></td>
         <td><button class="btn-secondary" data-station="${st.id}">Inspect</button></td>
       `;
       tbody.appendChild(tr);
@@ -273,8 +349,7 @@ import {
   }
 
   document.getElementById("station-search")?.addEventListener("input", (e) => {
-    const filter = document.getElementById("status-filter");
-    renderStations(e.target.value, filter ? filter.value : 'all');
+    renderStations(e.target.value);
   });
 
   document.getElementById("status-filter")?.addEventListener("change", (e) => {
@@ -290,42 +365,71 @@ import {
     const tbody = document.querySelector("#anomalies-table tbody");
     if (!tbody) return;
     tbody.innerHTML = "";
-    const data = ANOMALIES || [];
-    data.filter((a) => filter === "all" || a.type === filter).forEach((a) => {
+    
+    const data = anomalyData || [];
+    const filtered = data.filter((a) => filter === "all" || a.type === filter || a.fault_type === filter);
+    
+    if (filtered.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px;">✅ No anomalies detected</td></tr>`;
+      return;
+    }
+    
+    filtered.forEach((a, index) => {
       const tr = document.createElement("tr");
-      const sevClass =
-        a.severity === "CRITICAL" ? "critical" :
-        a.severity === "HIGH" ? "critical" :
-        a.severity === "MEDIUM" ? "warning" : "healthy";
-      td.innerHTML = `
-    <td>${a.time}</td>
-    <td><strong>${a.station}</strong></td>
-    <td>${a.param}</td>
-    <td>${a.value}</td>
-    <td>${a.type}</td>
-    <td><span class="status-pill ${sevClass}">${a.severity}</span></td>
-    <td>${a.conf}%</td>
-    <td>${a.assessment}</td>
-    <td>
-        <button class="btn-secondary" data-invest="${a.station}" style="margin-right:4px;font-size:11px;">🔍</button>
-        <button class="btn-secondary" data-feedback="confirm" data-id="${a.id || index}" style="font-size:11px;background:rgba(34,197,94,0.1);">✅</button>
-        <button class="btn-secondary" data-feedback="reject" data-id="${a.id || index}" style="font-size:11px;background:rgba(239,68,68,0.1);">❌</button>
-    </td>
-`;
+      const sevClass = a.severity === "CRITICAL" ? "critical" :
+                      a.severity === "HIGH" ? "critical" :
+                      a.severity === "MEDIUM" ? "warning" : "healthy";
       
+      const time = a.time || a.timestamp || 'N/A';
+      const station = a.station || a.station_id || 'Unknown';
+      const param = a.param || 'Temperature';
+      const value = a.value !== undefined ? a.value : (a.temperature || '—');
+      const type = a.type || a.fault_type || 'Unknown';
+      const severity = a.severity || 'LOW';
+      const conf = a.conf || (a.confidence ? Math.round(a.confidence * 100) : 0);
+      const assessment = a.assessment || (a.is_anomaly ? 'Anomaly Detected' : 'Normal');
+      
+      tr.innerHTML = `
+        <td>${time}</td>
+        <td><strong>${station}</strong></td>
+        <td>${param}</td>
+        <td>${typeof value === 'number' ? value.toFixed(1) : value}</td>
+        <td>${type}</td>
+        <td><span class="status-pill ${sevClass}">${severity}</span></td>
+        <td>${conf}%</td>
+        <td>${assessment}</td>
+        <td>
+          <button class="btn-secondary" data-invest="${station}" style="margin-right:4px;font-size:11px;">🔍</button>
+          <button class="btn-secondary" data-feedback="confirm" data-id="${a.id || index}" style="font-size:11px;background:rgba(34,197,94,0.1);">✅</button>
+          <button class="btn-secondary" data-feedback="reject" data-id="${a.id || index}" style="font-size:11px;background:rgba(239,68,68,0.1);">❌</button>
+        </td>
+      `;
       tbody.appendChild(tr);
     });
+    
     tbody.querySelectorAll("[data-invest]").forEach((btn) => {
       btn.addEventListener("click", () => {
         showView("investigate");
-        if (btn.dataset.invest === "AWS-DEL-01" || btn.dataset.invest === "AWS-VAR-21") {
-          document.getElementById("case-select").value = "case1";
-        } else if (btn.dataset.invest === "AWS-HYD-06") {
-          document.getElementById("case-select").value = "case3";
-        } else {
-          document.getElementById("case-select").value = "case2";
+        document.getElementById("case-select").value = "case1";
+        renderCase("case1");
+      });
+    });
+    
+    tbody.querySelectorAll("[data-feedback]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const action = btn.dataset.feedback;
+        const anomalyId = btn.dataset.id;
+        const row = btn.closest('tr');
+        const station = row.querySelector('td:nth-child(2)')?.textContent || 'unknown';
+        
+        const decision = action === 'confirm' ? 'confirmed' : 'false_positive';
+        try {
+          await submitFeedback(anomalyId, station, decision);
+          showToast(`✅ Feedback recorded: ${decision}`, 'success');
+          updateFeedbackStats();
+        } catch (e) {
+          showToast('❌ Failed to submit feedback', 'error');
         }
-        renderCase(document.getElementById("case-select").value);
       });
     });
   }
@@ -333,19 +437,7 @@ import {
   document.getElementById("anomaly-filter")?.addEventListener("change", (e) => {
     renderAnomalies(e.target.value);
   });
-  tbody.querySelectorAll("[data-feedback]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-        const action = btn.dataset.feedback;
-        const anomalyId = btn.dataset.id;
-        const row = btn.closest('tr');
-        const station = row.querySelector('td:nth-child(2)')?.textContent || 'unknown';
-        
-        const decision = action === 'confirm' ? 'confirmed' : 'false_positive';
-        await submitFeedback(anomalyId, station, decision);
-        showToast(`✅ Feedback recorded: ${decision}`, 'success');
-        updateFeedbackStats();
-    });
-});
+
   // ============================================================
   // ALERTS
   // ============================================================
@@ -354,17 +446,26 @@ import {
     const el = document.getElementById(containerId);
     if (!el) return;
     el.innerHTML = "";
-    const data = ALERTS || [];
-    data.slice(0, limit).forEach((a) => {
+    
+    const data = anomalyData || [];
+    const limited = data.slice(0, limit);
+    
+    if (limited.length === 0) {
+      el.innerHTML = `<div style="padding:20px;text-align:center;color:var(--muted);">✅ No alerts</div>`;
+      return;
+    }
+    
+    limited.forEach((a) => {
       const div = document.createElement("div");
-      div.className = `alert-item ${a.severity}`;
+      const severity = a.severity?.toLowerCase() || 'medium';
+      div.className = `alert-item ${severity}`;
       div.innerHTML = `
         <div class="alert-top">
-          <span class="alert-title">${a.title}</span>
-          <span class="alert-time">${a.time}</span>
+          <span class="alert-title">${a.station || a.station_id || 'Unknown'} · ${a.type || a.fault_type || 'Anomaly'}</span>
+          <span class="alert-time">${a.time || a.timestamp || 'Now'}</span>
         </div>
-        <div class="alert-body">${a.body}</div>
-        <div class="alert-reco">→ ${a.reco}</div>
+        <div class="alert-body">${a.explanation || a.assessment || 'Anomaly detected'}</div>
+        <div class="alert-reco">→ ${a.reco || 'Inspect sensor'}</div>
       `;
       el.appendChild(div);
     });
@@ -378,25 +479,26 @@ import {
     const tbody = document.querySelector("#health-table tbody");
     if (!tbody) return;
     tbody.innerHTML = "";
-    STATIONS.forEach((st) => {
-      const state = STATION_STATE[st.id] || { health: 85, fault: null };
-      const tempH = Math.max(20, state.health + (state.fault === "Spike" || state.fault === "Calibration" ? -30 : 5));
-      const presH = Math.max(40, state.health + (state.fault === "Drift" ? -20 : 0));
-      const humH = Math.max(30, state.health + (state.fault === "Frozen" ? -35 : 0));
-      const overall = state.health || 85;
-      const drift = state.fault === "Drift" || state.fault === "Calibration"
-        ? "Active drift"
-        : overall < 70 ? "Watch" : "Stable";
-      const trend = overall < 60 ? "↓ Declining" : overall < 80 ? "→ Stable" : "↑ Good";
+    
+    const stations = stationData.length > 0 ? stationData : [
+      { id: "AWS001", name: "Delhi" },
+      { id: "AWS002", name: "Mumbai" },
+      { id: "AWS003", name: "Bangalore" },
+      { id: "AWS004", name: "Chennai" },
+      { id: "AWS005", name: "Kolkata" },
+    ];
+    
+    stations.forEach((st) => {
+      const health = healthData[st.id] || { temperature: 85, pressure: 88, humidity: 82, overall: 85 };
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td><strong>${st.id}</strong></td>
-        <td>${Math.min(99, tempH)}%</td>
-        <td>${Math.min(99, presH)}%</td>
-        <td>${Math.min(99, humH)}%</td>
-        <td><strong>${overall}%</strong></td>
-        <td>${drift}</td>
-        <td>${trend}</td>
+        <td>${health.temperature || 85}%</td>
+        <td>${health.pressure || 88}%</td>
+        <td>${health.humidity || 82}%</td>
+        <td><strong>${health.overall || 85}%</strong></td>
+        <td>Stable</td>
+        <td>↑ Good</td>
       `;
       tbody.appendChild(tr);
     });
@@ -404,9 +506,9 @@ import {
     const healthTemp = document.getElementById("health-temp");
     const healthPres = document.getElementById("health-pres");
     const healthHum = document.getElementById("health-hum");
-    if (healthTemp) healthTemp.textContent = "91%";
+    if (healthTemp) healthTemp.textContent = "85%";
     if (healthPres) healthPres.textContent = "88%";
-    if (healthHum) healthHum.textContent = "84%";
+    if (healthHum) healthHum.textContent = "82%";
   }
 
   let healthChart;
@@ -421,7 +523,7 @@ import {
         labels,
         datasets: [
           {
-            label: "AWS-DEL-01 Temp Sensor Health",
+            label: "AWS001 Sensor Health",
             data: [92, 88, 81, 72, 61, 50, 42],
             borderColor: "#ef4444",
             tension: 0.3,
@@ -429,7 +531,7 @@ import {
           },
           {
             label: "Network Average",
-            data: [90, 89, 90, 88, 87, 88, 87],
+            data: [90, 89, 90, 88, 87, 88, 85],
             borderColor: "#38bdf8",
             borderDash: [5, 5],
             tension: 0.3,
@@ -447,68 +549,86 @@ import {
       },
     });
   }
-  
+
   // ============================================================
-  // LIVE STREAM
+  // WEBSOCKET LIVE STREAM
   // ============================================================
 
-  function randomAround(base, spread = 0.8) {
-    if (base == null) return null;
-    return +(base + (Math.random() - 0.5) * spread * 2).toFixed(1);
+  let ws = null;
+  let wsConnected = false;
+
+  function connectWebSocket(onMessage, onConnect, onDisconnect) {
+    const ws = new WebSocket(WS_URL);
+    
+    ws.onopen = () => {
+      console.log('✅ WebSocket connected');
+      if (onConnect) onConnect();
+    };
+    
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (onMessage) onMessage(data);
+      } catch (e) {
+        console.error('WebSocket parse error:', e);
+      }
+    };
+    
+    ws.onclose = () => {
+      console.log('❌ WebSocket disconnected');
+      if (onDisconnect) onDisconnect();
+    };
+    
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+    
+    return ws;
   }
 
-  function pushLiveRow() {
+  function initWebSocket() {
+    ws = connectWebSocket(
+      (data) => {
+        addLiveRow(data);
+        if (data.status === 'ANOMALY') {
+          showToast(`🚨 Anomaly detected at ${data.station_id}!`, 'error');
+          playAlertSound();
+        }
+      },
+      () => {
+        wsConnected = true;
+        showToast('🌐 Live stream connected!', 'success');
+        document.getElementById('connection-status').textContent = '🟢 Connected';
+      },
+      () => {
+        wsConnected = false;
+        showToast('❌ Live stream disconnected', 'error');
+        document.getElementById('connection-status').textContent = '🔴 Disconnected';
+      }
+    );
+  }
+
+  function addLiveRow(data) {
     const tbody = document.querySelector("#live-table tbody");
     if (!tbody) return;
-    const st = STATIONS[Math.floor(Math.random() * STATIONS.length)];
-    const state = STATION_STATE[st.id] || { status: 'healthy' };
-    const now = new Date().toLocaleTimeString("en-IN", { hour12: false });
-    let temp = state.temp != null ? randomAround(state.temp) : null;
-    let pressure = state.pressure != null ? randomAround(state.pressure, 1.2) : null;
-    let humidity = state.humidity != null ? Math.round(randomAround(state.humidity, 2)) : null;
-
-    let qc = "PASS";
-    let ml = (0.1 + Math.random() * 0.25).toFixed(2);
-    let status = "normal";
-    let isAnomaly = false;
     
-    if (state.status === "critical" && Math.random() > 0.4) {
-      qc = "FAIL";
-      ml = (0.75 + Math.random() * 0.2).toFixed(2);
-      status = "anomaly";
-      isAnomaly = true;
-      if (state.fault === "Spike") {
-        temp = +(40 + Math.random() * 18).toFixed(1);
-      } else if (state.fault === "Frozen") {
-        humidity = 55;
-      } else if (state.fault === "Calibration") {
-        temp = +(38 + Math.random() * 6).toFixed(1);
-      }
-    } else if (state.status === "warning" && Math.random() > 0.6) {
-      qc = "WARN";
-      ml = (0.45 + Math.random() * 0.25).toFixed(2);
-      status = "anomaly";
-      isAnomaly = true;
-    }
-
+    const now = new Date().toLocaleTimeString("en-IN", { hour12: false });
+    const statusClass = data.status === 'ANOMALY' ? 'anomaly' : 'normal';
+    const qc = data.status === 'ANOMALY' ? 'FAIL' : 'PASS';
+    
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${now}</td>
-      <td><strong>${st.id}</strong></td>
-      <td>${temp != null ? temp : "—"}</td>
-      <td>${pressure != null ? pressure : "—"}</td>
-      <td>${humidity != null ? humidity : "—"}</td>
+      <td><strong>${data.station_id}</strong></td>
+      <td>${data.temperature || '—'}</td>
+      <td>${data.pressure || '—'}</td>
+      <td>${data.humidity || '—'}</td>
       <td>${qc}</td>
-      <td>${ml}</td>
-      <td><span class="status-pill ${status}">${status === "anomaly" ? "ANOMALY" : "NORMAL"}</span></td>
+      <td>${data.anomaly_score?.toFixed(4) || '0.0000'}</td>
+      <td><span class="status-pill ${statusClass}">${data.status || 'NORMAL'}</span></td>
     `;
     tbody.insertBefore(tr, tbody.firstChild);
     while (tbody.children.length > 12) tbody.removeChild(tbody.lastChild);
-    
-    if (isAnomaly) {
-      showToast(`🚨 Anomaly detected at ${st.id}!`, 'error');
-      playAlertSound();
-    }
   }
 
   let streamInterval;
@@ -520,8 +640,6 @@ import {
       btn.textContent = "▶ Simulate Live Stream";
       showToast('⏹️ Live stream stopped', 'info');
     } else {
-      pushLiveRow();
-      streamInterval = setInterval(pushLiveRow, 2200);
       btn.textContent = "⏹ Stop Simulation";
       showToast('▶️ Live stream started!', 'success');
     }
@@ -532,14 +650,81 @@ import {
   // ============================================================
 
   function renderCase(key) {
-    const c = CASES[key];
+    const cases = {
+      case1: {
+        title: "Temperature Spike at AWS-DEL-01",
+        assessment: "Likely Sensor Fault",
+        confidence: 96,
+        severity: "HIGH",
+        observed: { temp: 54.8, pressure: 1008.2, humidity: 41 },
+        nearby: [
+          { id: "AWS-CHD-11", temp: 29.4 },
+          { id: "AWS-JAI-07", temp: 34.6 },
+          { id: "AWS-LKO-08", temp: 32.1 },
+        ],
+        ml: { score: 0.91, type: "Spike" },
+        health: { temp: 42, pressure: 88, humidity: 91, overall: 42 },
+        evidence: [
+          { kind: "support", text: "Sudden temperature jump (+22°C in 15 min) — classic spike pattern" },
+          { kind: "support", text: "Nearby stations remain 29–35°C — strong spatial outlier" },
+          { kind: "support", text: "Temperature sensor health declining over last 14 days" },
+        ],
+        xai: "The anomaly score is high (0.91). Spatial comparison shows the observation is an extreme local outlier. Combined with declining sensor health, the system assesses this as a <strong>likely sensor fault</strong>.",
+        reco: "Inspect temperature sensor at AWS-DEL-01. Verify physical condition and calibration."
+      },
+      case2: {
+        title: "Regional Heat Spike — Multiple Stations",
+        assessment: "Genuine Weather Event",
+        confidence: 88,
+        severity: "LOW",
+        observed: { temp: 41.5, pressure: 998.4, humidity: 22 },
+        nearby: [
+          { id: "AWS-JAI-07", temp: 41.2 },
+          { id: "AWS-AMD-09", temp: 40.8 },
+          { id: "AWS-DEL-01", temp: 40.1 },
+        ],
+        ml: { score: 0.62, type: "Spike" },
+        health: { temp: 94, pressure: 91, humidity: 89, overall: 92 },
+        evidence: [
+          { kind: "against", text: "Multiple nearby stations show similar elevated temperatures (40–42°C)" },
+          { kind: "against", text: "Humidity is correspondingly low (22%) — physically consistent with heat" },
+          { kind: "against", text: "Sensor health is excellent across parameters" },
+        ],
+        xai: "Although unusual, spatial analysis shows a coherent regional pattern. Sensor health scores are high. Therefore AtmosAi classifies this as a <strong>genuine weather event</strong>.",
+        reco: "No sensor action required. Continue monitoring."
+      },
+      case3: {
+        title: "Frozen Humidity — AWS-HYD-06",
+        assessment: "Likely Sensor Fault",
+        confidence: 94,
+        severity: "MEDIUM",
+        observed: { temp: 29.8, pressure: 948.3, humidity: 55 },
+        nearby: [
+          { id: "AWS-BLR-03", humidity: 62 },
+          { id: "AWS-CHN-04", humidity: 71 },
+          { id: "AWS-COI-24", humidity: 64 },
+        ],
+        ml: { score: 0.84, type: "Frozen" },
+        health: { temp: 90, pressure: 87, humidity: 48, overall: 68 },
+        evidence: [
+          { kind: "support", text: "Humidity value unchanged for 4+ hours (persistence check failed)" },
+          { kind: "support", text: "Temperature and pressure continue to vary normally" },
+          { kind: "support", text: "Humidity sensor health score dropped to 48%" },
+        ],
+        xai: "The value is locked while other parameters evolve — a classic frozen sensor signature. AtmosAi assesses this as a <strong>likely frozen humidity sensor</strong>.",
+        reco: "Inspect humidity sensor for obstruction or electronics fault."
+      }
+    };
+    
+    const c = cases[key];
     if (!c) return;
-    const isFault = c.assessment.includes("Sensor Fault") || c.assessment.includes("Communication");
+    
+    const isFault = c.assessment.includes("Sensor Fault");
     const summaryEl = document.getElementById("case-summary");
     if (summaryEl) {
       summaryEl.innerHTML = `
         <h4>${c.title}</h4>
-        <p style="color:var(--muted);font-size:13px">Demo case — synthetic scenario for SIH evaluation of Event vs Sensor Fault engine.</p>
+        <p style="color:var(--muted);font-size:13px">Demo case for SIH evaluation of Event vs Sensor Fault engine.</p>
         <div class="assessment-row">
           <div class="assessment-item ${isFault ? "fault" : "event"}">
             <label>Assessment</label>
@@ -556,10 +741,6 @@ import {
           <div class="assessment-item">
             <label>ML Score</label>
             <strong>${c.ml.score}</strong>
-          </div>
-          <div class="assessment-item">
-            <label>Fault Type</label>
-            <strong>${c.ml.type}</strong>
           </div>
         </div>
       `;
@@ -606,18 +787,18 @@ import {
   });
 
   document.getElementById("accept-reco")?.addEventListener("click", () => {
-    showToast('✅ Recommendation accepted and logged!', 'success');
-    alert("Recommendation accepted and logged.\n\nHuman decision recorded. Observation remains unchanged (human-in-the-loop).");
+    showToast('✅ Recommendation accepted!', 'success');
+    alert("Recommendation accepted.\n\nHuman decision recorded.");
   });
   
   document.getElementById("override-btn")?.addEventListener("click", () => {
-    showToast('⚠️ Operator override recorded!', 'warning');
-    alert("Operator override recorded.\n\nYou may mark this as genuine weather or request further investigation. Official data is never auto-overwritten.");
+    showToast('⚠️ Override recorded!', 'warning');
+    alert("Operator override recorded.");
   });
   
   document.getElementById("mark-review")?.addEventListener("click", () => {
-    showToast('📋 Case marked for review!', 'info');
-    alert("Case marked for senior review. Ticket created in ops queue.");
+    showToast('📋 Marked for review!', 'info');
+    alert("Case marked for senior review.");
   });
 
   // ============================================================
@@ -672,25 +853,16 @@ import {
   // ============================================================
 
   function openStationModal(id) {
-    const st = STATIONS.find((s) => s.id === id);
-    const state = STATION_STATE[id];
-    if (!st) return;
     const body = document.getElementById("modal-body");
     if (!body) return;
     body.innerHTML = `
-      <h3 style="margin-bottom:8px">${st.id} — ${st.name}</h3>
-      <p style="color:var(--muted);font-size:13px;margin-bottom:16px">${st.region} · ${st.lat}, ${st.lon}</p>
+      <h3 style="margin-bottom:8px">${id}</h3>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:16px">AWS Station</p>
       <div class="assessment-row" style="margin-bottom:16px">
-        <div class="assessment-item"><label>Status</label><strong class="status-pill ${state.status}">${state.status}</strong></div>
-        <div class="assessment-item"><label>Health</label><strong>${state.health}%</strong></div>
-        <div class="assessment-item"><label>Active Fault</label><strong>${state.fault || "None"}</strong></div>
+        <div class="assessment-item"><label>Status</label><strong class="status-pill healthy">healthy</strong></div>
+        <div class="assessment-item"><label>Health</label><strong>85%</strong></div>
+        <div class="assessment-item"><label>Active Fault</label><strong>None</strong></div>
       </div>
-      <dl class="case-context">
-        <dt>Temperature</dt><dd>${state.temp != null ? state.temp + "°C" : "No data"}</dd>
-        <dt>Pressure</dt><dd>${state.pressure != null ? state.pressure + " hPa" : "No data"}</dd>
-        <dt>Humidity</dt><dd>${state.humidity != null ? state.humidity + "%" : "No data"}</dd>
-      </dl>
-      <p style="margin-top:16px;font-size:12px;color:var(--muted)">Simulated reading for prototype demonstration. Production system would stream live AWS observations.</p>
       <button class="btn-primary" style="margin-top:16px;width:auto" id="modal-investigate">Open Investigation</button>
     `;
     const modal = document.getElementById("station-modal");
@@ -698,14 +870,8 @@ import {
     document.getElementById("modal-investigate")?.addEventListener("click", () => {
       if (modal) modal.classList.add("hidden");
       showView("investigate");
-      if (id === "AWS-DEL-01" || id === "AWS-VAR-21") {
-        document.getElementById("case-select").value = "case1";
-      } else if (id === "AWS-HYD-06") {
-        document.getElementById("case-select").value = "case3";
-      } else {
-        document.getElementById("case-select").value = "case2";
-      }
-      renderCase(document.getElementById("case-select").value);
+      document.getElementById("case-select").value = "case1";
+      renderCase("case1");
     });
   }
 
@@ -717,91 +883,60 @@ import {
   });
 
   // ============================================================
-  // AUTO-REFRESH
+  // FETCH DATA FROM API
   // ============================================================
 
   async function fetchAllData() {
     try {
-        const dashboard = await fetchDashboard();
-        const anomalies = await fetchAnomalies();
-        const stations = await fetchStations();
-        const health = await fetchSensorHealth();
-        
-        // Update global data
-        window.dashboardData = dashboard;
-        window.anomalyData = anomalies;
-        window.stationData = stations;
-        window.healthData = health;
-        
-        // Update UI
-        computeKPIs();
-        renderAnomalies(document.getElementById("anomaly-filter")?.value || 'all');
-        renderAlerts("recent-alerts", 5);
-        renderAlerts("alerts-full");
-        renderHealthTable();
-        updateFeedbackStats();
-        
-        return { dashboard, anomalies, stations, health };
+      console.log('🔄 Fetching data from API...');
+      
+      const dashboard = await fetchDashboard();
+      const anomalies = await fetchAnomalies();
+      const stations = await fetchStations();
+      const health = await fetchSensorHealth();
+      
+      dashboardData = dashboard;
+      anomalyData = anomalies;
+      stationData = stations;
+      healthData = health;
+      
+      console.log('✅ Data fetched:', { dashboard, anomalies, stations, health });
+      
+      computeKPIs();
+      renderAnomalies(document.getElementById("anomaly-filter")?.value || 'all');
+      renderAlerts("recent-alerts", 5);
+      renderAlerts("alerts-full");
+      renderHealthTable();
+      updateFeedbackStats();
+      
+      return { dashboard, anomalies, stations, health };
     } catch (error) {
-        console.error('Error fetching data:', error);
-        showToast('❌ Failed to fetch data from server', 'error');
-        return null;
+      console.error('❌ Error fetching data:', error);
+      showToast('❌ Failed to fetch data from server', 'error');
+      return null;
     }
-}
-// ===== WEBSOCKET LIVE STREAM =====
+  }
 
-let ws = null;
-let wsConnected = false;
+  // ============================================================
+  // FEEDBACK STATS
+  // ============================================================
 
-function initWebSocket() {
-    ws = connectWebSocket(
-        (data) => {
-            // Add to live table
-            addLiveRow(data);
-            
-            // If anomaly, show alert
-            if (data.status === 'ANOMALY') {
-                showToast(`🚨 Anomaly detected at ${data.station_id}!`, 'error');
-                playAlertSound();
-            }
-        },
-        () => {
-            wsConnected = true;
-            showToast('🌐 Live stream connected!', 'success');
-            document.getElementById('connection-status').textContent = '🟢 Connected';
-        },
-        () => {
-            wsConnected = false;
-            showToast('❌ Live stream disconnected', 'error');
-            document.getElementById('connection-status').textContent = '🔴 Disconnected';
-        }
-    );
-}
+  async function updateFeedbackStats() {
+    try {
+      const stats = await fetchFeedbackStats();
+      document.getElementById('fb-total').textContent = stats.total || 0;
+      document.getElementById('fb-confirmed').textContent = stats.confirmed || 0;
+      document.getElementById('fb-fp').textContent = stats.false_positives || 0;
+      document.getElementById('fb-accuracy').textContent = stats.accuracy + '%' || '0%';
+    } catch (e) {
+      console.log('Feedback stats not available');
+    }
+  }
 
-function addLiveRow(data) {
-    const tbody = document.querySelector("#live-table tbody");
-    if (!tbody) return;
-    
-    const now = new Date().toLocaleTimeString("en-IN", { hour12: false });
-    const statusClass = data.status === 'ANOMALY' ? 'anomaly' : 'normal';
-    const qc = data.status === 'ANOMALY' ? 'FAIL' : 'PASS';
-    
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-        <td>${now}</td>
-        <td><strong>${data.station_id}</strong></td>
-        <td>${data.temperature}</td>
-        <td>${data.pressure}</td>
-        <td>${data.humidity}</td>
-        <td>${qc}</td>
-        <td>${data.anomaly_score?.toFixed(4) || '0.0000'}</td>
-        <td><span class="status-pill ${statusClass}">${data.status}</span></td>
-    `;
-    tbody.insertBefore(tr, tbody.firstChild);
-    while (tbody.children.length > 12) tbody.removeChild(tbody.lastChild);
-}
+  // ============================================================
+  // AUTO-REFRESH
+  // ============================================================
 
-  // Auto-refresh every 30 seconds
   setInterval(() => {
     fetchAllData();
     console.log('🔄 Dashboard auto-refreshed at', new Date().toLocaleTimeString());
@@ -812,36 +947,24 @@ function addLiveRow(data) {
   // ============================================================
 
   function initApp() {
+    console.log('🚀 Initializing AtmosAi...');
     updateClock();
     setInterval(updateClock, 1000);
     
     showToast('🔄 Loading data...', 'info');
     
     fetchAllData().then(() => {
-        setTimeout(initMap, 100);
-        renderStations();
-        renderAnomalies();
-        renderAlerts("recent-alerts", 5);
-        renderAlerts("alerts-full");
-        renderHealthTable();
-        updateFeedbackStats();
-        showToast('🌤️ AtmosAi ready!', 'success');
+      setTimeout(initMap, 100);
+      renderStations();
+      renderAnomalies();
+      renderAlerts("recent-alerts", 5);
+      renderAlerts("alerts-full");
+      renderHealthTable();
+      updateFeedbackStats();
+      showToast('🌤️ AtmosAi ready!', 'success');
     });
     
-    // Initialize WebSocket for live stream
     initWebSocket();
-}
-// ===== FEEDBACK STATS =====
-
-async function updateFeedbackStats() {
-    try {
-        const stats = await fetchFeedbackStats();
-        document.getElementById('fb-total').textContent = stats.total || 0;
-        document.getElementById('fb-confirmed').textContent = stats.confirmed || 0;
-        document.getElementById('fb-fp').textContent = stats.false_positives || 0;
-        document.getElementById('fb-accuracy').textContent = stats.accuracy + '%' || '0%';
-    } catch (e) {
-        console.log('Feedback stats not available');
-    }
-}
+    console.log('✅ AtmosAi initialized!');
+  }
 })();
