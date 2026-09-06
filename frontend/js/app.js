@@ -1,18 +1,18 @@
 // AtmosAi Operational Prototype
 // SIH26073 — Detect. Explain. Protect.
 
+// Import API functions (these contain the correct Railway URLs)
+import { 
+    fetchDashboard, fetchStations, fetchAnomalies, 
+    fetchSensorHealth, detectAnomaly, connectWebSocket,
+    submitFeedback, fetchFeedbackStats
+} from './api.js';
+
 (function () {
   "use strict";
 
   // ============================================================
-  // API CONFIGURATION
-  // ============================================================
-  
-  
-  const WS_URL = 'ws://localhost:8000/ws/live';
-
-  // ============================================================
-  // GLOBAL DATA (will be populated from API)
+  // GLOBAL DATA
   // ============================================================
   
   let dashboardData = null;
@@ -183,53 +183,6 @@
     URL.revokeObjectURL(url);
     showToast('📥 Report exported successfully!', 'success');
   };
-
-  // ============================================================
-  // API CALLS
-  // ============================================================
-
-  async function fetchDashboard() {
-    const response = await fetch(`${API_URL}/dashboard`);
-    return await response.json();
-  }
-
-  async function fetchStations() {
-    const response = await fetch(`${API_URL}/stations`);
-    const data = await response.json();
-    return data.stations || [];
-  }
-
-  async function fetchAnomalies() {
-    const response = await fetch(`${API_URL}/anomalies`);
-    const data = await response.json();
-    return data.anomalies || [];
-  }
-
-  async function fetchSensorHealth() {
-    const response = await fetch(`${API_URL}/sensor-health`);
-    const data = await response.json();
-    return data.sensor_health || {};
-  }
-
-  async function submitFeedback(anomaly_id, station_id, user_decision, notes = '') {
-    const response = await fetch(`${API_URL}/feedback`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        anomaly_id,
-        station_id,
-        timestamp: new Date().toISOString(),
-        user_decision,
-        notes
-      })
-    });
-    return await response.json();
-  }
-
-  async function fetchFeedbackStats() {
-    const response = await fetch(`${API_URL}/feedback/stats`);
-    return await response.json();
-  }
 
   // ============================================================
   // KPIs
@@ -557,35 +510,6 @@
   let ws = null;
   let wsConnected = false;
 
-  function connectWebSocket(onMessage, onConnect, onDisconnect) {
-    const ws = new WebSocket(WS_URL);
-    
-    ws.onopen = () => {
-      console.log('✅ WebSocket connected');
-      if (onConnect) onConnect();
-    };
-    
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (onMessage) onMessage(data);
-      } catch (e) {
-        console.error('WebSocket parse error:', e);
-      }
-    };
-    
-    ws.onclose = () => {
-      console.log('❌ WebSocket disconnected');
-      if (onDisconnect) onDisconnect();
-    };
-    
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
-    
-    return ws;
-  }
-
   function initWebSocket() {
     ws = connectWebSocket(
       (data) => {
@@ -888,7 +812,7 @@
 
   async function fetchAllData() {
     try {
-      console.log('🔄 Fetching data from API...');
+      console.log('🔄 Fetching data from Railway backend...');
       
       const dashboard = await fetchDashboard();
       const anomalies = await fetchAnomalies();
@@ -900,7 +824,7 @@
       stationData = stations;
       healthData = health;
       
-      console.log('✅ Data fetched:', { dashboard, anomalies, stations, health });
+      console.log('✅ Data fetched from Railway:', { dashboard, anomalies, stations, health });
       
       computeKPIs();
       renderAnomalies(document.getElementById("anomaly-filter")?.value || 'all');
@@ -911,7 +835,7 @@
       
       return { dashboard, anomalies, stations, health };
     } catch (error) {
-      console.error('❌ Error fetching data:', error);
+      console.error('❌ Error fetching data from Railway:', error);
       showToast('❌ Failed to fetch data from server', 'error');
       return null;
     }
@@ -951,7 +875,7 @@
     updateClock();
     setInterval(updateClock, 1000);
     
-    showToast('🔄 Loading data...', 'info');
+    showToast('🔄 Loading data from Railway...', 'info');
     
     fetchAllData().then(() => {
       setTimeout(initMap, 100);
