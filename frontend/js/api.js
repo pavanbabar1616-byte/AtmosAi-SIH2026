@@ -1,8 +1,8 @@
 // frontend/js/api.js
-// Real API integration - Railway Backend
+// API Configuration - LOCALHOST
 
-const API_URL = 'https://atmosai-sih2026.up.railway.app/api';
-const WS_URL = 'wss://atmosai-sih2026.up.railway.app/ws/live';
+const API_URL = 'http://localhost:8000/api';
+const WS_URL = 'ws://localhost:8000/ws/live';
 
 // ===== REST API FUNCTIONS =====
 
@@ -79,7 +79,7 @@ export function connectWebSocket(onMessage, onConnect, onDisconnect) {
     const ws = new WebSocket(WS_URL);
     
     ws.onopen = () => {
-        console.log('✅ WebSocket connected to Railway');
+        console.log('✅ WebSocket connected to localhost');
         if (onConnect) onConnect();
     };
     
